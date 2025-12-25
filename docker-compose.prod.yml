@@ -1,0 +1,17 @@
+# Production Docker Compose overrides
+# This file extends docker-compose.yml with production-specific settings
+# To be configured when ready for production deployment
+
+
+services:
+  app:
+    build:
+      dockerfile: docker/Dockerfile.prod
+    restart: unless-stopped
+    # Production settings will be added here:
+    # - Resource limits
+    # - Logging configuration
+    # - Health checks
+    # - Secrets management
+    # TODO: Add production configurations
+

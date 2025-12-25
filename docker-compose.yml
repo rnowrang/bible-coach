@@ -1,0 +1,25 @@
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: ${PROJECT_NAME:-bible}_app
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=development
+    env_file:
+      - .env
+    command: npm run dev
+    networks:
+      - default
+
+networks:
+  default:
+    name: ${PROJECT_NAME:-bible}_network
+

@@ -1,0 +1,16 @@
+# Production Dockerfile - To be configured when ready for production
+# This file is a placeholder for future production optimization
+
+FROM node:20-slim
+
+WORKDIR /app
+
+# Production optimizations will be added here:
+# - Multi-stage builds
+# - Non-root user
+# - Health checks
+# - Optimized layer caching
+
+# For now, use dev Dockerfile
+# TODO: Implement production optimizations
+
