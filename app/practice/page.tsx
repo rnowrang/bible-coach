@@ -326,9 +326,14 @@ function PracticePageContent() {
     if (typeof window === 'undefined') return;
     
     // Detect iOS devices (iPhone, iPad, iPod)
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    isIOSRef.current = isIOS;
+    // Simple detection: check for iOS-specific strings in user agent
+    const userAgent = navigator.userAgent;
+    const isIOS = /iPhone|iPad|iPod/.test(userAgent) && !/Macintosh/.test(userAgent);
+    // For modern iPads that report as Mac, check if it's touch-only (no mouse)
+    const isModernIPad = /Macintosh/.test(userAgent) && 'ontouchstart' in window && navigator.maxTouchPoints > 1;
+    const isMobileIOS = isIOS || isModernIPad;
+    isIOSRef.current = isMobileIOS;
+    console.log('🔍 Device detection:', { isMobileIOS, isIOS, isModernIPad, platform: navigator.platform, maxTouchPoints: navigator.maxTouchPoints });
     
     // Initialize speech recognition
     if ('webkitSpeechRecognition' in window) {
@@ -676,163 +681,25 @@ function PracticePageContent() {
   }, [isRecording, pauseThreshold]); // Removed transcription from deps - use ref instead
 
   const startRecording = () => {
-    if (!verseData) return;
-    
-    // Initialize audio context on user interaction (required by browsers)
-    initAudioContext();
-    
-    // Reset all transcription state
-    setTranscription('');
-    transcriptionRef.current = '';
-    accumulatedTranscriptRef.current = ''; // Reset accumulated transcript
-    setInterimTranscript('');
-    setRealTimeFeedback(null);
-    completionPlayedRef.current = false; // Reset completion flag for new recording
-    setVerseCompleted(false); // Reset completion state
-    lastWordTimeRef.current = Date.now();
-    setTimeSinceLastWord(0);
-    resetTriggeredRef.current = false;
-    setShowResetFlash(false);
-    
-    // On iOS, create a fresh SpeechRecognition instance each time
-    // iOS Safari has issues reusing instances
-    if (isIOSRef.current || !recognitionRef.current) {
-      if ('webkitSpeechRecognition' in window) {
-        const SpeechRecognition = (window as any).webkitSpeechRecognition;
-        const recognition = new SpeechRecognition();
-        
-        // iOS-specific settings
-        recognition.continuous = false; // iOS doesn't support continuous
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
-        recognition.maxAlternatives = 1;
-        
-        // Set up handlers for this instance
-        recognition.onresult = (event: any) => {
-          let interimText = '';
-          let newFinalText = '';
-          let hasNewFinalWords = false;
-
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-              newFinalText += transcript + ' ';
-              hasNewFinalWords = true;
-            } else {
-              interimText += transcript;
-            }
-          }
-
-          if (hasNewFinalWords) {
-            const trimmedNew = newFinalText.trim();
-            const hasRealWords = /[a-zA-Z0-9]/.test(trimmedNew) && trimmedNew.length > 1;
-            
-            if (hasRealWords) {
-              lastWordTimeRef.current = Date.now();
-              setTimeSinceLastWord(0);
-              resetTriggeredRef.current = false;
-              
-              // Append to accumulated transcript
-              if (accumulatedTranscriptRef.current.length > 0) {
-                accumulatedTranscriptRef.current += ' ' + trimmedNew;
-              } else {
-                accumulatedTranscriptRef.current = trimmedNew;
-              }
-              console.log('📱 iOS result:', trimmedNew, '| Total:', accumulatedTranscriptRef.current);
-            }
-          }
-
-          const totalTranscript = accumulatedTranscriptRef.current;
-          setTranscription(totalTranscript);
-          transcriptionRef.current = totalTranscript;
-          setInterimTranscript(interimText);
-
-          // Real-time feedback
-          const fullText = totalTranscript + ' ' + interimText;
-          if (verseData && fullText.trim()) {
-            const feedback = generateRealTimeFeedback(verseData.text, fullText.trim());
-            setRealTimeFeedback(feedback);
-            
-            // Check completion
-            if (!completionPlayedRef.current) {
-              const verseWords = verseData.text.toLowerCase()
-                .replace(/[.,!?;:—–"'"']/g, ' ')
-                .split(/\s+/)
-                .filter(w => w.length > 0);
-              const spokenWords = fullText.toLowerCase()
-                .replace(/[.,!?;:—–"'"']/g, ' ')
-                .split(/\s+/)
-                .filter(w => w.length > 0);
-              const lastVerseWord = verseWords[verseWords.length - 1];
-              const lastSpokenWords = spokenWords.slice(-5);
-              
-              if (lastSpokenWords.includes(lastVerseWord)) {
-                completionPlayedRef.current = true;
-                setVerseCompleted(true);
-                playCompletionSound();
-                console.log('🎉 Verse completed on iOS!');
-              }
-            }
-          }
-        };
-        
-        recognition.onerror = (event: any) => {
-          console.log('📱 iOS recognition error:', event.error);
-          if (event.error === 'not-allowed') {
-            setIsRecording(false);
-            isRecordingRef.current = false;
-            setError('Microphone access denied. Please allow microphone access in Settings.');
-          }
-          // For other errors on iOS, we'll just try to restart in onend
-        };
-        
-        recognition.onend = () => {
-          console.log('📱 iOS recognition ended, isRecording:', isRecordingRef.current);
-          if (isRecordingRef.current) {
-            // Restart recognition on iOS
-            setTimeout(() => {
-              if (isRecordingRef.current) {
-                try {
-                  recognition.start();
-                  console.log('📱 iOS: Restarted recognition');
-                } catch (e: any) {
-                  console.log('📱 iOS: Restart failed, creating new instance');
-                  // If restart fails, trigger a new recording cycle
-                  if (isRecordingRef.current) {
-                    setTimeout(() => {
-                      if (isRecordingRef.current && verseData) {
-                        const newRecognition = new SpeechRecognition();
-                        newRecognition.continuous = false;
-                        newRecognition.interimResults = true;
-                        newRecognition.lang = 'en-US';
-                        // Copy handlers
-                        newRecognition.onresult = recognition.onresult;
-                        newRecognition.onerror = recognition.onerror;
-                        newRecognition.onend = recognition.onend;
-                        recognitionRef.current = newRecognition;
-                        try {
-                          newRecognition.start();
-                          console.log('📱 iOS: New instance started');
-                        } catch (e2) {
-                          console.log('📱 iOS: Could not start new instance');
-                        }
-                      }
-                    }, 200);
-                  }
-                }
-              }
-            }, 100);
-          }
-        };
-        
-        recognitionRef.current = recognition;
-        console.log('📱 iOS: Created fresh recognition instance');
-      }
-    }
-    
-    if (recognitionRef.current) {
+    if (recognitionRef.current && verseData) {
+      // Initialize audio context on user interaction (required by browsers)
+      initAudioContext();
+      
+      // Reset all transcription state
+      setTranscription('');
+      transcriptionRef.current = '';
+      accumulatedTranscriptRef.current = ''; // Reset accumulated transcript
+      setInterimTranscript('');
+      setRealTimeFeedback(null);
+      completionPlayedRef.current = false; // Reset completion flag for new recording
+      setVerseCompleted(false); // Reset completion state
+      lastWordTimeRef.current = Date.now();
+      setTimeSinceLastWord(0);
+      resetTriggeredRef.current = false;
+      setShowResetFlash(false);
       setIsRecording(true);
-      isRecordingRef.current = true;
+      isRecordingRef.current = true; // Keep ref in sync
+      
       try {
         recognitionRef.current.start();
         console.log('🎙️ Recording started, iOS:', isIOSRef.current, 'pause threshold:', pauseThreshold, 'ms');
@@ -842,6 +709,9 @@ function PracticePageContent() {
         setIsRecording(false);
         isRecordingRef.current = false;
       }
+    } else {
+      console.error('Cannot start recording: recognitionRef or verseData is null');
+      setError('Speech recognition not available. Please refresh the page.');
     }
   };
 
