@@ -324,17 +324,28 @@ function PracticePageContent() {
     // Only initialize on client side
     if (typeof window === 'undefined') return;
     
+    // Detect iOS devices (iPhone, iPad, iPod)
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    
     // Initialize speech recognition
     if ('webkitSpeechRecognition' in window) {
       const SpeechRecognition =
         (window as any).webkitSpeechRecognition ||
         (window as any).SpeechRecognition;
       const recognition = new SpeechRecognition();
-      recognition.continuous = true;
+      
+      // iOS doesn't support continuous mode properly - it stops immediately
+      // On iOS, we use non-continuous mode and restart after each result
+      recognition.continuous = !isIOS;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
       // Keep recognition running even during silence
       (recognition as any).maxAlternatives = 1;
+      
+      if (isIOS) {
+        console.log('📱 iOS detected - using non-continuous speech recognition mode');
+      }
 
       recognition.onresult = (event: any) => {
         let interimText = '';
@@ -438,13 +449,15 @@ function PracticePageContent() {
       };
 
       recognition.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
+        console.error('Speech recognition error:', event.error, 'isIOS:', isIOS);
         
         // Handle specific error types
         if (event.error === 'aborted') {
           // Aborted is usually temporary - try to restart if still recording
+          // iOS triggers abort more frequently, so handle it gracefully
           console.log('🔄 Recognition aborted, attempting restart...');
           if (isRecordingRef.current && recognitionRef.current) {
+            const restartDelay = isIOS ? 200 : 100;
             setTimeout(() => {
               try {
                 recognitionRef.current?.start();
@@ -452,11 +465,26 @@ function PracticePageContent() {
                 console.log('🎤 Restarted after abort');
               } catch (e) {
                 console.log('Could not restart after abort:', e);
-                setIsRecording(false);
-                isRecordingRef.current = false;
-                setError('Microphone access interrupted. Please try again.');
+                // On iOS, don't give up immediately - try again
+                if (isIOS && isRecordingRef.current) {
+                  setTimeout(() => {
+                    try {
+                      recognitionRef.current?.start();
+                      setError(null);
+                      console.log('🎤 iOS: Retry after abort succeeded');
+                    } catch (e2) {
+                      setIsRecording(false);
+                      isRecordingRef.current = false;
+                      setError('Microphone access interrupted. Please try again.');
+                    }
+                  }, 500);
+                } else {
+                  setIsRecording(false);
+                  isRecordingRef.current = false;
+                  setError('Microphone access interrupted. Please try again.');
+                }
               }
-            }, 100);
+            }, restartDelay);
           }
         } else if (event.error === 'not-allowed') {
           setIsRecording(false);
@@ -464,7 +492,18 @@ function PracticePageContent() {
           setError('Microphone access denied. Please allow microphone access in your browser settings.');
         } else if (event.error === 'no-speech') {
           // No speech detected - this is normal, just continue
+          // On iOS, this might trigger more often - restart if still recording
           console.log('No speech detected, continuing...');
+          if (isIOS && isRecordingRef.current && recognitionRef.current) {
+            setTimeout(() => {
+              try {
+                recognitionRef.current?.start();
+                console.log('🎤 iOS: Restarted after no-speech');
+              } catch (e) {
+                // Ignore - might already be running
+              }
+            }, 100);
+          }
         } else {
           // Other errors - stop recording
           setIsRecording(false);
@@ -476,11 +515,14 @@ function PracticePageContent() {
       recognition.onend = () => {
         // Use ref to check current recording state (not stale closure value)
         // This prevents issues where isRecording state was captured at effect setup time
-        console.log('🎤 Speech recognition ended, isRecordingRef:', isRecordingRef.current);
+        console.log('🎤 Speech recognition ended, isRecordingRef:', isRecordingRef.current, 'isIOS:', isIOS);
         
         if (isRecordingRef.current && recognitionRef.current) {
           // User is still recording - restart speech recognition
           // Browser stops recognition after silence, we need to restart it
+          // iOS needs a slightly longer delay to prevent rapid start/stop cycles
+          const restartDelay = isIOS ? 100 : 50;
+          
           setTimeout(() => {
             if (isRecordingRef.current && recognitionRef.current) {
               try {
@@ -490,10 +532,21 @@ function PracticePageContent() {
                 // If already started, that's fine
                 if (error.name !== 'InvalidStateError') {
                   console.log('Recognition restart error:', error);
+                  // On iOS, try again with a longer delay if there's an error
+                  if (isIOS && isRecordingRef.current) {
+                    setTimeout(() => {
+                      try {
+                        recognitionRef.current?.start();
+                        console.log('🎤 iOS: Retry restart succeeded');
+                      } catch (e) {
+                        console.log('🎤 iOS: Retry restart failed:', e);
+                      }
+                    }, 300);
+                  }
                 }
               }
             }
-          }, 50);
+          }, restartDelay);
         } else {
           // User explicitly stopped - clean up
           console.log('🛑 User stopped recording, cleaning up');
