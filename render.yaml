@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: bible-memorization-app
+    runtime: docker
+    dockerfilePath: ./docker/Dockerfile.prod
+    dockerContext: .
+    plan: starter
+    region: oregon
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_BIBLE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+    healthCheckPath: /api/health
+    autoDeploy: true
+
