@@ -47,6 +47,8 @@ function PracticePageContent() {
   const [mounted, setMounted] = useState(false); // For hydration fix
   const [speechRecognitionAvailable, setSpeechRecognitionAvailable] = useState(true); // Assume available initially
   const [verseCompleted, setVerseCompleted] = useState(false); // Track if verse has been completed
+  const [useManualInput, setUseManualInput] = useState(false); // Manual text input mode for iOS
+  const [manualInputText, setManualInputText] = useState(''); // Text typed by user
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const lastWordTimeRef = useRef<number>(0);
@@ -334,6 +336,12 @@ function PracticePageContent() {
     const isMobileIOS = isIOS || isModernIPad;
     isIOSRef.current = isMobileIOS;
     console.log('🔍 Device detection:', { isMobileIOS, isIOS, isModernIPad, platform: navigator.platform, maxTouchPoints: navigator.maxTouchPoints });
+    
+    // On iOS, default to manual input mode since speech recognition is unreliable
+    if (isMobileIOS) {
+      setUseManualInput(true);
+      console.log('📱 iOS detected - defaulting to manual text input mode');
+    }
     
     // Initialize speech recognition
     if ('webkitSpeechRecognition' in window) {
@@ -741,6 +749,49 @@ function PracticePageContent() {
     }
   };
 
+  // Handle manual text input (for iOS or when speech recognition fails)
+  const handleManualInputChange = (text: string) => {
+    setManualInputText(text);
+    setTranscription(text);
+    
+    // Update real-time feedback as user types
+    if (verseData && text.trim()) {
+      const feedback = generateRealTimeFeedback(verseData.text, text.trim());
+      setRealTimeFeedback(feedback);
+      
+      // Check for completion
+      if (!completionPlayedRef.current) {
+        const verseWords = verseData.text.toLowerCase()
+          .replace(/[.,!?;:—–"'"']/g, ' ')
+          .split(/\s+/)
+          .filter(w => w.length > 0);
+        const typedWords = text.toLowerCase()
+          .replace(/[.,!?;:—–"'"']/g, ' ')
+          .split(/\s+/)
+          .filter(w => w.length > 0);
+        const lastVerseWord = verseWords[verseWords.length - 1];
+        const lastTypedWords = typedWords.slice(-5);
+        
+        if (lastTypedWords.includes(lastVerseWord) && typedWords.length >= verseWords.length * 0.8) {
+          completionPlayedRef.current = true;
+          setVerseCompleted(true);
+          playCompletionSound();
+          console.log('🎉 Verse completed via manual input!');
+        }
+      }
+    } else {
+      setRealTimeFeedback(null);
+    }
+  };
+
+  const resetManualInput = () => {
+    setManualInputText('');
+    setTranscription('');
+    setRealTimeFeedback(null);
+    completionPlayedRef.current = false;
+    setVerseCompleted(false);
+  };
+
   const handleGetFeedback = async () => {
     if (!verseData || !transcription.trim()) {
       alert('Please record your recitation first');
@@ -1063,72 +1114,117 @@ function PracticePageContent() {
               )}
             </div>
 
-            <div className="flex flex-col items-center gap-4">
-              {!isRecording ? (
-                <button
-                  onClick={startRecording}
-                  className="bg-red-600 text-white px-8 py-4 rounded-full hover:bg-red-700 transition-colors font-medium text-lg flex items-center gap-2"
-                >
-                  <span className="w-3 h-3 bg-white rounded-full"></span>
-                  Start Recording
-                </button>
-              ) : (
-                <button
-                  onClick={stopRecording}
-                  className="bg-gray-600 text-white px-8 py-4 rounded-full hover:bg-gray-700 transition-colors font-medium text-lg flex items-center gap-2"
-                >
-                  <span className="w-3 h-3 bg-white rounded-full animate-pulse"></span>
-                  Stop Recording
-                </button>
-              )}
-
-              {transcription && !isRecording && (
-                <button
-                  onClick={handleGetFeedback}
-                  disabled={loading}
-                  className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:bg-gray-400"
-                >
-                  {loading ? 'Analyzing...' : 'Get Feedback'}
-                </button>
-              )}
-
-              {error && (
-                <div className="text-red-600 text-sm mt-2">{error}</div>
-              )}
-
-              {mounted && !speechRecognitionAvailable && (
-                <div className="text-yellow-600 text-sm mt-2">
-                  Speech recognition not available. You can type your recitation
-                  below.
+            {/* Input Mode Toggle */}
+            {mounted && (
+              <div className="flex justify-center mb-4">
+                <div className="inline-flex rounded-lg border border-gray-300 p-1 bg-gray-100">
+                  <button
+                    onClick={() => setUseManualInput(false)}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      !useManualInput 
+                        ? 'bg-white text-blue-600 shadow-sm' 
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    🎤 Voice
+                  </button>
+                  <button
+                    onClick={() => setUseManualInput(true)}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      useManualInput 
+                        ? 'bg-white text-blue-600 shadow-sm' 
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    ⌨️ Type
+                  </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            {mounted && !speechRecognitionAvailable && (
-              <div className="mt-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Type your recitation:
-                </label>
-                <textarea
-                  value={transcription}
-                  onChange={(e) => {
-                    setTranscription(e.target.value);
-                    transcriptionRef.current = e.target.value;
-                    accumulatedTranscriptRef.current = e.target.value;
-                  }}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  rows={4}
-                  placeholder="Type the verse as you remember it..."
-                />
-                {transcription && (
+            {/* Voice Recording Mode */}
+            {!useManualInput && (
+              <div className="flex flex-col items-center gap-4">
+                {!isRecording ? (
+                  <button
+                    onClick={startRecording}
+                    className="bg-red-600 text-white px-8 py-4 rounded-full hover:bg-red-700 transition-colors font-medium text-lg flex items-center gap-2"
+                  >
+                    <span className="w-3 h-3 bg-white rounded-full"></span>
+                    Start Recording
+                  </button>
+                ) : (
+                  <button
+                    onClick={stopRecording}
+                    className="bg-gray-600 text-white px-8 py-4 rounded-full hover:bg-gray-700 transition-colors font-medium text-lg flex items-center gap-2"
+                  >
+                    <span className="w-3 h-3 bg-white rounded-full animate-pulse"></span>
+                    Stop Recording
+                  </button>
+                )}
+
+                {transcription && !isRecording && (
                   <button
                     onClick={handleGetFeedback}
                     disabled={loading}
-                    className="mt-4 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:bg-gray-400"
+                    className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:bg-gray-400"
                   >
                     {loading ? 'Analyzing...' : 'Get Feedback'}
                   </button>
                 )}
+
+                {error && (
+                  <div className="text-red-600 text-sm mt-2">{error}</div>
+                )}
+
+                {mounted && !speechRecognitionAvailable && (
+                  <div className="text-yellow-600 text-sm mt-2">
+                    Speech recognition not available. Switch to Type mode.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Manual Text Input Mode */}
+            {useManualInput && (
+              <div className="w-full">
+                {isIOSRef.current && (
+                  <div className="text-sm text-blue-600 mb-3 text-center">
+                    📱 Using text input mode (recommended for iOS)
+                  </div>
+                )}
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Type the verse from memory:
+                </label>
+                <textarea
+                  value={manualInputText}
+                  onChange={(e) => handleManualInputChange(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                  rows={4}
+                  placeholder="Start typing the verse as you remember it..."
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck="false"
+                />
+                <div className="flex gap-3 mt-4 justify-center">
+                  {manualInputText && (
+                    <>
+                      <button
+                        onClick={resetManualInput}
+                        className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors font-medium"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        onClick={handleGetFeedback}
+                        disabled={loading}
+                        className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:bg-gray-400"
+                      >
+                        {loading ? 'Analyzing...' : 'Get Feedback'}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             )}
           </div>
