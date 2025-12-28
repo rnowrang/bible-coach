@@ -329,14 +329,14 @@ function PracticePageContent() {
       const SpeechRecognition =
         (window as any).webkitSpeechRecognition ||
         (window as any).SpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
-      recognitionRef.current.lang = 'en-US';
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
       // Keep recognition running even during silence
-      (recognitionRef.current as any).maxAlternatives = 1;
+      (recognition as any).maxAlternatives = 1;
 
-      recognitionRef.current.onresult = (event: any) => {
+      recognition.onresult = (event: any) => {
         let interimText = '';
         let newFinalText = '';
         let hasNewFinalWords = false;
@@ -437,7 +437,7 @@ function PracticePageContent() {
         }
       };
 
-      recognitionRef.current.onerror = (event: any) => {
+      recognition.onerror = (event: any) => {
         console.error('Speech recognition error:', event.error);
         
         // Handle specific error types
@@ -473,7 +473,7 @@ function PracticePageContent() {
         }
       };
 
-      recognitionRef.current.onend = () => {
+      recognition.onend = () => {
         // Use ref to check current recording state (not stale closure value)
         // This prevents issues where isRecording state was captured at effect setup time
         console.log('🎤 Speech recognition ended, isRecordingRef:', isRecordingRef.current);
@@ -505,6 +505,9 @@ function PracticePageContent() {
           }
         }
       };
+      
+      // Assign to ref after all setup is complete
+      recognitionRef.current = recognition;
     } else {
       setSpeechRecognitionAvailable(false);
       setError('Speech recognition not supported in this browser');
