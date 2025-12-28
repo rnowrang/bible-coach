@@ -51,13 +51,13 @@ function generateSimpleFeedback(verseText: string, userRecitation: string): any 
 }
 
 export async function POST(request: Request) {
-  let verseText: string;
-  let userRecitation: string;
+  let verseText: string = '';
+  let userRecitation: string = '';
   
   try {
     const body = await request.json();
-    verseText = body.verseText;
-    userRecitation = body.userRecitation;
+    verseText = body.verseText || '';
+    userRecitation = body.userRecitation || '';
 
     if (!verseText || !userRecitation) {
       return NextResponse.json(
