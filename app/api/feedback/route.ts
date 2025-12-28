@@ -51,8 +51,13 @@ function generateSimpleFeedback(verseText: string, userRecitation: string): any 
 }
 
 export async function POST(request: Request) {
+  let verseText: string;
+  let userRecitation: string;
+  
   try {
-    const { verseText, userRecitation } = await request.json();
+    const body = await request.json();
+    verseText = body.verseText;
+    userRecitation = body.userRecitation;
 
     if (!verseText || !userRecitation) {
       return NextResponse.json(
@@ -123,12 +128,14 @@ Be gentle and encouraging. Focus on what they got right, then help them with wha
     // Handle specific OpenAI errors
     if (error.status === 429 || error.message?.includes('quota') || error.message?.includes('exceeded')) {
       // Provide simple fallback feedback when quota is exceeded
-      const simpleFeedback = generateSimpleFeedback(verseText, userRecitation);
-      return NextResponse.json({ 
-        feedback: simpleFeedback,
-        warning: 'Using simple feedback due to OpenAI quota limit. Add credits at https://platform.openai.com/ for AI-powered coaching.',
-        code: 'QUOTA_EXCEEDED'
-      });
+      if (verseText && userRecitation) {
+        const simpleFeedback = generateSimpleFeedback(verseText, userRecitation);
+        return NextResponse.json({ 
+          feedback: simpleFeedback,
+          warning: 'Using simple feedback due to OpenAI quota limit. Add credits at https://platform.openai.com/ for AI-powered coaching.',
+          code: 'QUOTA_EXCEEDED'
+        });
+      }
     }
     
     if (error.status === 401 || error.message?.includes('Invalid API key')) {
